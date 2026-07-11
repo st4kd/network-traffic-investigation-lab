@@ -25,7 +25,7 @@ The goal was to demonstrate how raw packet data can be transformed into searchab
 
 Both virtual machines were connected to the same VirtualBox NAT Network named `TCM`.
 
-### Software and Tools
+### Tools Used
 
 - Ubuntu 24.04.2 LTS
 - Windows virtual machine
@@ -57,9 +57,9 @@ Splunk ingestion and correlation
 
 ---
 
-# Scenario 1: HTTP Traffic Investigation
+## Scenario 1: HTTP Traffic Investigation
 
-## Objective
+### Objective
 
 The objective of this scenario was to:
 
@@ -133,7 +133,7 @@ The PCAP was processed with Zeek:
 /opt/zeek/bin/zeek -C -r scenario-1-http.pcap
 ```
 
-The `-C` option was used because the VirtualBox capture contained checksum-offloading artifacts. Without this option, Zeek treated some TCP checksums as invalid and discarded those packets during offline analysis.
+The `-C` option was used because the VirtualBox capture contained checksum-offloading artifacts. Without it, Zeek treated some TCP checksums as invalid during offline analysis.
 
 Zeek generated the following logs:
 
@@ -206,7 +206,7 @@ The corresponding response packet showed:
 
 ## Preparing Zeek Logs for Splunk
 
-The PCAP was processed a second time with JSON output enabled:
+The PCAP was processed again with JSON output enabled:
 
 ```bash
 /opt/zeek/bin/zeek -C -r scenario-1-http.pcap \
@@ -223,29 +223,26 @@ files.log
 
 A dedicated Splunk index named `zeek` was created.
 
-### Splunk Source Types
+### JSON Parsing Configuration
 
-The logs used the following source types:
-
-```text
-zeek:http:json
-zeek:conn:json
-zeek:files:json
-```
-
-Timestamp parsing used the Zeek `ts` field:
+The Zeek logs were ingested as newline-delimited JSON and used the Zeek `ts` field for event time.
 
 ```text
 Timestamp format: %s.%6N
 Timestamp field: ts
 Time zone: GMT
+Host value: ubuntu-zeek-sensor
+Index: zeek
 ```
 
-The metadata host value was set to:
+Custom source types included:
 
 ```text
-ubuntu-zeek-sensor
+http.log  → zeek:http:json
+files.log → zeek:files:json
 ```
+
+The `conn.log` file was ingested using the same JSON parsing configuration as `http.log`. Because both logs used newline-delimited JSON and the same `ts` timestamp format, the connection events were parsed correctly and remained searchable through their `source` value.
 
 ---
 
@@ -317,7 +314,7 @@ The search processed ten total events:
 - Three HTTP events
 - Three file events
 
-The ICMP connection was excluded from the final table because it did not have matching HTTP or file records.
+The ICMP event was excluded from the final table because it did not have corresponding HTTP and file records.
 
 The query returned three complete HTTP transactions:
 
@@ -351,14 +348,14 @@ The investigation established the following sequence:
 ### Notable Transaction
 
 ```text
-Source:          192.168.1.4
-Destination:     192.168.1.5:8000
-Method:          GET
-URI:             /secret-document.txt
-Status:          404 File not found
-User agent:      curl/8.13.0
-Response type:   text/html
-Response size:   335 bytes
+Source:           192.168.1.4
+Destination:      192.168.1.5:8000
+Method:           GET
+URI:              /secret-document.txt
+Status:           404 File not found
+User agent:       curl/8.13.0
+Response type:    text/html
+Response size:    335 bytes
 Connection state: SF
 ```
 
@@ -374,15 +371,15 @@ A single HTTP 404 response is not inherently malicious. In this scenario, it was
 - Wireshark is useful for validating exact packet-level details.
 - Zeek converts raw packets into structured and searchable metadata.
 - Zeek UIDs make it possible to correlate related events across multiple log types.
-- Splunk can combine connection, application, and file metadata into a single investigation timeline.
-- File metadata direction may differ from request direction because the server transmits the HTTP response object back to the client.
+- Splunk can combine connection, application, and file metadata into one investigation timeline.
+- Correct timestamp parsing is important when ingesting Zeek JSON into Splunk.
 - A detection should be based on meaningful patterns rather than treating one isolated 404 response as malicious.
 
 ---
 
 ## Future Improvements
 
-Future additions to this project may include:
+Future additions may include:
 
 - Repeated HTTP 404 requests
 - Web path enumeration detection
@@ -391,7 +388,6 @@ Future additions to this project may include:
 - File download investigation
 - Splunk dashboards
 - Scheduled Splunk alerts
-- Additional Zeek log sources
 - Automated ingestion of Zeek JSON logs
 
 ---
